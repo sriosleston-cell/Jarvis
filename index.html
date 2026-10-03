@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jarvis</title>
+<style>
+:root{--bg:#04080d;--card:#101a26;--tx:#eaf6ff;--mut:#7fa3bd;--ac:#35d0ff;box-sizing:border-box}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#04080d}}
+:root[data-theme="light"]{--bg:#04080d}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#o{position:fixed;inset:0;width:100%;height:100%;touch-action:manipulation}
+h1{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;margin:0;text-align:center;font-size:15px;letter-spacing:8px;color:var(--ac);pointer-events:none}
+#ui{position:fixed;left:0;right:0;bottom:0;padding-bottom:env(safe-area-inset-bottom,0px);background:linear-gradient(transparent,var(--bg) 35%)}
+#lab{text-align:center;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--mut);padding-top:18px}
+#cap{text-align:center;font-size:16px;line-height:1.4;padding:6px 20px 8px;min-height:44px;max-height:22vh;overflow-y:auto}
+#cap a{color:var(--ac)}
+#bar{display:flex;gap:6px;padding:6px 12px 12px;align-items:center}
+#t{flex:1;min-width:0;padding:12px 14px;border-radius:22px;border:1px solid #2a4258;background:var(--card);color:var(--tx);font-size:16px}
+button{border:1px solid #2a4258;border-radius:24px;height:46px;min-width:40px;padding:0 4px;font-size:18px;background:var(--card);color:var(--tx)}
+#clap.on{background:var(--ac);color:#04202b}
+</style>
+</head>
+<body>
+<canvas id="o"></canvas>
+<h1>JARVIS</h1>
+<div id="ui">
+<div id="lab"></div>
+<div id="cap"></div>
+<div id="bar">
+<input id="t" placeholder="O escríbeme aquí" autocomplete="off">
+<button id="send" aria-label="Enviar">➤</button>
+<button id="clap" aria-label="Palmadas">👏</button>
+<button id="vz" aria-label="Cambiar voz">🗣</button>
+<button id="cfg" aria-label="Ajustes">⚙</button>
+<button id="eyeb" aria-label="Ojo de Dios">👁</button>
+</div>
+</div>
+<script>
+const LINK="https://claude.ai/artifact/SteczSYiQCiKMrnN7FJQ5t";
+const SITES={youtube:"https://www.youtube.com",google:"https://www.google.com",gmail:"https://mail.google.com",correo:"https://mail.google.com",netflix:"https://www.netflix.com",spotify:"https://open.spotify.com",maps:"https://maps.google.com",whatsapp:"https://web.whatsapp.com"};
+const PERSONA="Eres Jarvis, la asistente personal y mejor amiga del usuario. Eres mujer y hablas de ti en femenino. Hablas en español, tono cercano, agradable y gracioso (bromas ligeras, nunca ofensivo). Responde en 1 o 2 frases cortas, sin emojis ni listas, porque se leen en voz alta.";
+const LAB={idle:"Toca la esfera para hablar",listen:"Te escucho",think:"Procesando",speak:"Hablando"};
+const cap=document.getElementById("cap"),lab=document.getElementById("lab"),inp=document.getElementById("t"),clapBtn=document.getElementById("clap");
+const esc=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+let sample=null,hist=(()=>{try{return JSON.parse(localStorage.getItem("jv_hist")||"[]")}catch(e){return[]}})(),rec=null,state="idle",wantClaps=false;
+function cfg(k){try{return localStorage.getItem(k)||""}catch(e){return ""}}
+function setCfg(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function setState(s){state=s;lab.textContent=(s==="idle"&&wantClaps)?"Da dos palmadas o toca la esfera":LAB[s]}
+
+/* ---------- ORBE FUTURISTA ---------- */
+const cv=document.getElementById("o"),cx=cv.getContext("2d");
+let W,H,D=Math.min(devicePixelRatio||1,2),hue=195,lv=.15,micLv=0;
+function size(){const r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*D;cv.height=H*D;cx.setTransform(D,0,0,D,0,0)}
+addEventListener("resize",size);size();
+const HUE={idle:195,listen:165,think:265,speak:315};
+let eye=false;
+const SIMS=Array.from({length:28},()=>({la:(Math.random()-.5)*2.3,lo:Math.random()*6.28,id:"SIM-"+(100+Math.floor(Math.random()*900)),ph:Math.random()*6}));
+function drawEye(t){
+  const x=W/2,y=H*.42,R=Math.min(W*.4,H*.3);
+  cx.globalCompositeOperation="source-over";cx.clearRect(0,0,W,H);cx.globalCompositeOperation="lighter";
+  cx.lineWidth=1;cx.strokeStyle="hsla(140,100%,60%,.35)";
+  for(let i=0;i<8;i++){const a=t*.3+i*Math.PI/8;cx.beginPath();cx.ellipse(x,y,Math.abs(Math.cos(a))*R,R,0,0,7);cx.stroke()}
+  for(let i=-3;i<=3;i++){const yy=y+i*R/4,rr=Math.sqrt(1-(i/4)**2)*R;cx.beginPath();cx.ellipse(x,yy,rr,rr*.22,0,0,7);cx.stroke()}
+  cx.strokeStyle="hsla(140,100%,70%,.85)";cx.lineWidth=2;cx.beginPath();cx.arc(x,y,R,0,7);cx.stroke();
+  const sw=t*1.6;cx.beginPath();cx.moveTo(x,y);cx.arc(x,y,R*1.15,sw-.6,sw);cx.closePath();cx.fillStyle="hsla(140,100%,50%,.2)";cx.fill();
+  cx.font="10px monospace";const lock=Math.floor(t/2)%SIMS.length;
+  SIMS.forEach((p,i)=>{
+    const ang=p.lo+t*.3;if(Math.cos(ang)<0)return;
+    const px=x+Math.sin(ang)*Math.cos(p.la)*R,py=y-Math.sin(p.la)*R,b=.4+.6*Math.abs(Math.sin(t*3+p.ph));
+    cx.fillStyle=`hsla(140,100%,70%,${b})`;cx.beginPath();cx.arc(px,py,3,0,7);cx.fill();
+    cx.fillText(p.id,px+7,py-5);
+    if(i===lock){cx.strokeStyle="hsla(0,100%,65%,.9)";cx.lineWidth=1.5;cx.strokeRect(px-12,py-12,24,24)}
+  });
+  cx.fillStyle="hsla(140,100%,75%,.9)";cx.font="12px monospace";cx.textAlign="center";
+  cx.fillText("OJO DE DIOS · MODO SIMULACIÓN",x,y-R-34);cx.fillText("DATOS FICTICIOS · NO RASTREA PERSONAS REALES",x,y+R+34);cx.textAlign="start";
+}
+const N=240,PTS=[];for(let i=0;i<N;i++){const y=1-2*(i+.5)/N,r=Math.sqrt(1-y*y),a=i*2.39996;PTS.push([Math.cos(a)*r,y,Math.sin(a)*r])}
+function frame(t){
+  t/=1000;
+  if(eye){drawEye(t);requestAnimationFrame(frame);return}
+  let tg=.15+.05*Math.sin(t*2);
+  if(state==="listen")tg=.45+.25*Math.sin(t*7)*Math.sin(t*3.1);
+  if(state==="think")tg=.35+.15*Math.sin(t*5);
+  if(state==="speak")tg=.55+.3*Math.abs(Math.sin(t*9)*Math.sin(t*2.3));
+  tg=Math.max(tg,micLv);
+  lv+=(tg-lv)*.12;hue+=(HUE[state]-hue)*.05;
+  const x=W/2,y=H*.42,R=Math.min(W*.29,H*.27)*(1+lv*.1);
+  cx.globalCompositeOperation="source-over";cx.clearRect(0,0,W,H);
+  let g=cx.createRadialGradient(x,y,R*.3,x,y,R*3);
+  g.addColorStop(0,`hsla(${hue},100%,55%,${.28+lv*.3})`);g.addColorStop(1,`hsla(${hue},100%,40%,0)`);
+  cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  cx.globalCompositeOperation="lighter";
+  /* núcleo de plasma */
+  cx.save();cx.beginPath();cx.arc(x,y,R,0,7);cx.clip();
+  g=cx.createRadialGradient(x,y,0,x,y,R);
+  g.addColorStop(0,`hsla(${hue},100%,30%,.9)`);g.addColorStop(1,`hsla(${hue+10},100%,12%,.9)`);
+  cx.fillStyle=g;cx.fillRect(x-R,y-R,R*2,R*2);
+  for(let i=0;i<6;i++){
+    const a=t*(.5+i*.21)+i*1.7,bx=x+Math.cos(a)*R*(.35+lv*.2),by=y+Math.sin(a*1.3)*R*(.35+lv*.2);
+    g=cx.createRadialGradient(bx,by,0,bx,by,R*.75);
+    g.addColorStop(0,`hsla(${hue+i*16},100%,62%,.5)`);g.addColorStop(1,`hsla(${hue+i*16},100%,50%,0)`);
+    cx.fillStyle=g;cx.fillRect(x-R,y-R,R*2,R*2);
+  }
+  g=cx.createRadialGradient(x,y,0,x,y,R*.45);
+  g.addColorStop(0,`hsla(${hue},100%,92%,${.7+lv*.3})`);g.addColorStop(1,`hsla(${hue},100%,70%,0)`);
+  cx.fillStyle=g;cx.fillRect(x-R,y-R,R*2,R*2);
+  cx.restore();
+  /* borde */
+  cx.lineWidth=5;cx.strokeStyle=`hsla(${hue},100%,60%,.18)`;cx.beginPath();cx.arc(x,y,R,0,7);cx.stroke();
+  cx.lineWidth=1.5;cx.strokeStyle=`hsla(${hue},100%,80%,.8)`;cx.beginPath();cx.arc(x,y,R,0,7);cx.stroke();
+  /* esfera de partículas 3D */
+  const ra=t*.45,rb=.4,ca=Math.cos(ra),sa=Math.sin(ra),cb=Math.cos(rb),sb=Math.sin(rb),S=R*1.12;
+  for(let i=0;i<N;i++){
+    const p=PTS[i],x1=p[0]*ca+p[2]*sa,z1=-p[0]*sa+p[2]*ca,y2=p[1]*cb-z1*sb,z2=p[1]*sb+z1*cb;
+    const d=(z2+1)/2,k=S*(1+.05*lv*Math.sin(t*6+i));
+    cx.fillStyle=`hsla(${hue+30},100%,75%,${.15+d*.75})`;
+    const sz=.8+d*2;cx.fillRect(x+x1*k-sz/2,y+y2*k-sz/2,sz,sz);
+  }
+  /* anillos orbitales */
+  for(let k=0;k<3;k++){
+    cx.save();cx.translate(x,y);cx.rotate(t*(.25+.15*k)*(k%2?-1:1)+k*1.05);
+    cx.setLineDash([5+k*7,9]);cx.lineDashOffset=-t*45*(k%2?-1:1);
+    cx.lineWidth=1.6;cx.strokeStyle=`hsla(${hue+k*22},100%,70%,.6)`;
+    cx.beginPath();cx.ellipse(0,0,R*1.42,R*(.3+.14*k),0,0,7);cx.stroke();cx.restore();
+  }
+  cx.setLineDash([]);
+  /* anillo HUD exterior con marcas */
+  const RH=R*1.6;
+  cx.save();cx.translate(x,y);cx.rotate(t*.12);
+  for(let i=0;i<72;i++){
+    const a=i/72*Math.PI*2,l=i%6===0?12:5,c=Math.cos(a),s=Math.sin(a);
+    cx.strokeStyle=`hsla(${hue},100%,70%,${i%6===0?.75:.35})`;cx.lineWidth=i%6===0?2:1;
+    cx.beginPath();cx.moveTo(c*RH,s*RH);cx.lineTo(c*(RH+l),s*(RH+l));cx.stroke();
+  }
+  cx.restore();
+  cx.lineWidth=3;cx.strokeStyle=`hsla(${hue+40},100%,70%,.7)`;
+  for(let i=0;i<3;i++){const a=-t*.6+i*2.09;cx.beginPath();cx.arc(x,y,RH-8,a,a+.9);cx.stroke()}
+  /* onda de voz */
+  cx.beginPath();cx.lineWidth=2;cx.strokeStyle=`hsla(${hue+15},100%,78%,${.35+lv*.5})`;
+  for(let i=0;i<=160;i++){
+    const a=i/160*Math.PI*2,r=R*1.25+lv*R*.14*(Math.sin(a*7+t*6)+Math.sin(a*13-t*4)*.6);
+    const px=x+Math.cos(a)*r,py=y+Math.sin(a)*r;i?cx.lineTo(px,py):cx.moveTo(px,py);
+  }
+  cx.closePath();cx.stroke();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- VOZ FEMENINA ---------- */
+const MALE=["jorge","diego","juan","carlos","pablo","enrique","male","hombre","miguel","luis"];
+const FEM=["monica","mónica","paulina","marisol","francisca","helena","laura","lucia","lucía","elena","sabina","google español","female","mujer","angelica","carmen","isabela","sofia"];
+let voices=[],vi=0;
+function loadVoices(){
+  const all=speechSynthesis.getVoices().filter(v=>v.lang.toLowerCase().startsWith("es"));
+  const fem=all.filter(v=>!MALE.some(m=>v.name.toLowerCase().includes(m)));
+  fem.sort((a,b)=>{const sc=v=>{const n=v.name.toLowerCase();const i=FEM.findIndex(f=>n.includes(f));return i<0?99:i};return sc(a)-sc(b)});
+  voices=fem.length?fem:all;
+  try{const s=parseInt(localStorage.getItem("jv_voz")||"0");if(s>=0&&s<voices.length)vi=s}catch(e){}
+}
+try{loadVoices();speechSynthesis.onvoiceschanged=loadVoices}catch(e){}
+document.getElementById("vz").onclick=()=>{
+  if(!voices.length){cap.textContent="Tu móvil no tiene voces en español instaladas.";return}
+  vi=(vi+1)%voices.length;try{localStorage.setItem("jv_voz",String(vi))}catch(e){}
+  say("Hola, soy Jarvis. ¿Te gusta mi voz?","Voz: "+esc(voices[vi].name)+" ("+(vi+1)+"/"+voices.length+")");
+};
+function say(txt,html){cap.innerHTML=html||esc(txt);if(cfg("jv_ek")&&cfg("jv_ev"))return eleven(txt);speakBrowser(txt)}
+let curA=null;
+async function eleven(txt){
+  try{
+    setState("think");if(curA)curA.pause();
+    const r=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+cfg("jv_ev"),{method:"POST",headers:{"xi-api-key":cfg("jv_ek"),"content-type":"application/json"},body:JSON.stringify({text:txt,model_id:"eleven_multilingual_v2"})});
+    if(!r.ok)throw 0;
+    curA=new Audio(URL.createObjectURL(await r.blob()));
+    curA.onplay=()=>setState("speak");curA.onended=()=>{setState("idle");resume()};
+    await curA.play();
+  }catch(e){speakBrowser(txt)}
+}
+function speakBrowser(txt){
+  try{
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(txt);u.lang="es-ES";u.rate=1;u.pitch=1.12;
+    if(voices[vi]){u.voice=voices[vi];u.lang=voices[vi].lang}
+    u.onstart=()=>setState("speak");
+    u.onend=u.onerror=()=>{setState("idle");resume()};
+    speechSynthesis.speak(u);
+  }catch(e){setState("idle");resume()}
+}
+function micFail(){
+  wantClaps=false;clapBtn.classList.remove("on");setState("idle");
+  const framed=window.self!==window.top;
+  cap.innerHTML=framed
+    ?`El micrófono está bloqueado dentro de la app. Puedes escribirme y te contesto en voz alta. Intenta abrirlo en el navegador: <a href="${LINK}" target="_blank">abrir Jarvis</a>`
+    :"Permiso de micrófono denegado. Actívalo en los ajustes del sitio y recarga la página.";
+  return false;
+}
+function listenOnce(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){say("Tu navegador no admite reconocimiento de voz. Escríbeme y listo.");return}
+  clapStop();try{speechSynthesis.cancel()}catch(e){}
+  rec=new SR();rec.lang="es-ES";rec.continuous=false;rec.interimResults=false;
+  let got=false;
+  rec.onresult=e=>{got=true;handle(e.results[0][0].transcript)};
+  rec.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed")micFail()};
+  rec.onend=()=>{if(state==="listen")setState("idle");if(!got)resume()};
+  setState("listen");
+  try{rec.start()}catch(e){setState("idle");resume()}
+}
+
+/* ---------- PALMADAS ---------- */
+let cs=null,ac=null,an=null,buf=null,clapOn=false,lastClap=0,prevPk=0;
+async function clapStart(){
+  if(clapOn)return true;
+  try{cs=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
+  catch(e){return micFail()}
+  ac=ac||new(window.AudioContext||window.webkitAudioContext)();
+  try{await ac.resume()}catch(e){}
+  const s=ac.createMediaStreamSource(cs);an=ac.createAnalyser();an.fftSize=1024;s.connect(an);
+  buf=new Float32Array(an.fftSize);clapOn=true;lastClap=0;prevPk=0;loopClap();return true;
+}
+function clapStop(){clapOn=false;micLv=0;if(cs){cs.getTracks().forEach(t=>t.stop());cs=null}}
+function resume(){if(wantClaps&&!clapOn&&state==="idle")clapStart()}
+const CLAP_LEVEL=.35; // sube si se activa con ruidos; baja si no detecta tus palmadas
+function loopClap(){
+  if(!clapOn)return;
+  an.getFloatTimeDomainData(buf);
+  let pk=0;for(let i=0;i<buf.length;i++){const v=Math.abs(buf[i]);if(v>pk)pk=v}
+  micLv=Math.min(pk*1.2,.7);
+  const now=performance.now();
+  if(pk>CLAP_LEVEL&&prevPk<.12){
+    const gap=now-lastClap;
+    if(lastClap&&gap>150&&gap<900){onDouble();return}
+    lastClap=now;
+  }
+  prevPk=pk;requestAnimationFrame(loopClap);
+}
+function beep(){try{const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=880;g.gain.value=.15;o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+.12)}catch(e){}}
+function onDouble(){clapStop();beep();setTimeout(listenOnce,150)}
+clapBtn.onclick=async()=>{
+  if(wantClaps){wantClaps=false;clapStop();clapBtn.classList.remove("on");setState(state);return}
+  wantClaps=true;
+  if(await clapStart()){clapBtn.classList.add("on");setState(state)}
+};
+
+/* ---------- CEREBRO ---------- */
+function notes(){try{return JSON.parse(localStorage.getItem("jv_notas")||"[]")}catch(e){return[]}}
+function saveNote(n){try{const a=notes();a.push(n);localStorage.setItem("jv_notas",JSON.stringify(a));return true}catch(e){return false}}
+async function ai(msg){
+  const key=cfg("jv_ak");
+  if(!key)return "Para charlar necesito tu clave de Claude. Toca el engranaje y pégala.";
+  hist.push({role:"user",content:msg});
+  let m=hist.slice(-8);while(m.length&&m[0].role!=="user")m.shift();
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-5-5",max_tokens:300,system:PERSONA+memText(),messages:m})});
+    const j=await r.json();if(!r.ok)throw new Error("api");
+    const text=j.content[0].text;hist.push({role:"assistant",content:text});saveHist();return text;
+  }catch(e){hist.pop();return "Uy, fallo con la clave o con la conexión. Revisa el engranaje."}
+}
+function getPos(){return new Promise((ok,no)=>navigator.geolocation?navigator.geolocation.getCurrentPosition(ok,no,{enableHighAccuracy:true,timeout:15000}):no())}
+async function whereAmI(share){
+  try{
+    const p=await getPos(),la=p.coords.latitude.toFixed(5),lo=p.coords.longitude.toFixed(5);
+    const url="https://www.google.com/maps?q="+la+","+lo;
+    let lugar="";
+    try{const r=await fetch("https://nominatim.openstreetmap.org/reverse?format=json&accept-language=es&lat="+la+"&lon="+lo);const j=await r.json();lugar=(j.display_name||"").split(",").slice(0,3).join(",")}catch(e){}
+    const txt=lugar?"Estás en "+lugar+".":"Ya te tengo localizado.";
+    let h=esc(txt)+` <a href="${url}" target="_blank">Ver en el mapa</a>`;
+    if(share)h+=`<br>Toca para enviarla: <a href="https://wa.me/?text=${encodeURIComponent("Estoy aquí: "+url)}" target="_blank">WhatsApp</a>`;
+    say(share?txt+" Te dejo el botón para enviarla por WhatsApp.":txt,h);
+  }catch(e){say("No pude obtener tu ubicación. Permite la ubicación en el navegador y vuelve a intentarlo.")}
+}
+function getMem(){try{return JSON.parse(localStorage.getItem("jv_mem")||"[]")}catch(e){return[]}}
+function addMem(f){try{const m=getMem();m.push(f);localStorage.setItem("jv_mem",JSON.stringify(m.slice(-50)))}catch(e){}}
+function memText(){const m=getMem();return m.length?"\n\nCosas que el usuario te ha pedido recordar (las dice él o ella, en primera persona): "+m.join("; ")+". Úsalas con naturalidad cuando venga a cuento.":""}
+function saveHist(){try{localStorage.setItem("jv_hist",JSON.stringify(hist.slice(-20)))}catch(e){}}
+async function run(o){
+  const has=(...w)=>w.some(x=>o.includes(x));
+  const mm=o.match(/(?:recuerda|acuérdate|acuerdate|apréndete|aprende) (?:que )?(.+)/);
+  if(mm){addMem(mm[1]);return say("Hecho, me lo guardo: "+mm[1]+". No se me olvida.")}
+  const nm=o.match(/me llamo (.+)/);
+  if(nm){addMem("Me llamo "+nm[1]);return say("Encantada, "+nm[1]+". Me acordaré de tu nombre.")}
+  if(has("qué sabes de mí","que sabes de mi")){const m=getMem();return say(m.length?"Esto es lo que sé de ti: "+m.join(". "):"Todavía no sé nada de ti. Dime cosas con la frase: recuerda que...")}
+  if(has("olvida todo","borra tu memoria","borra mi memoria")){try{localStorage.removeItem("jv_mem");localStorage.removeItem("jv_hist")}catch(e){}hist=[];return say("Memoria borrada. Empezamos de cero.")}
+  if(has("dónde estoy","donde estoy"))return whereAmI(false);
+  if(has("mi ubicación","mi ubicacion"))return whereAmI(true);
+  if(has("encuentra mi móvil","encuentra mi movil","perdido mi móvil","perdido mi movil","perdí mi móvil"))return say("Como yo vivo en tu móvil, no puedo buscarlo si lo pierdes. Usa el servicio oficial desde otro dispositivo.",`Si lo pierdes, usa el servicio oficial desde otro dispositivo: <a href="https://www.google.com/android/find" target="_blank">Android</a> o <a href="https://www.icloud.com/find" target="_blank">iPhone</a>.`);
+  if(has("ojo de dios")){eye=!eye;return say(eye?"Ojo de Dios activado. Es una simulación: no rastrea a nadie real.":"Ojo de Dios desactivado.")}
+  if(has("leer notas","lee mis notas","mis notas")){const a=notes();return say(a.length?"Tus últimas notas: "+a.slice(-5).join(". "):"No tienes notas todavía. Qué vida tan despejada.")}
+  if(has("nota","apunta","anota")){const n=o.replace(/.*?(nota|apunta|anota)/,"").trim();return say(n?(saveNote(n)?"Anotado, no se me olvida.":"No pude guardar la nota en este navegador."):"¿Y qué anoto? No soy telépata, todavía.")}
+  if(has("qué hora","que hora"))return say("Son las "+new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})+". Otro ratito de vida, aprovéchalo.");
+  if(has("qué día","que día","fecha"))return say("Hoy es "+new Date().toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+". Y sigues estando genial.");
+  if(has("abre","abrir")){for(const k in SITES)if(o.includes(k)){window.open(SITES[k],"_blank");return say("Abriendo "+k+". Tus deseos son órdenes.",`Abriendo <a href="${SITES[k]}" target="_blank">${k}</a>. Si no se abre solo, toca el enlace.`)}return say("Esa web no me la sé todavía.")}
+  if(has("busca","buscar")){const q=o.replace(/.*?(busca en google|buscar|busca)/,"").trim();if(!q)return say("¿Qué busco? Sin pistas no hago milagros.");const u="https://www.google.com/search?q="+encodeURIComponent(q);window.open(u,"_blank");return say("Buscando "+q,`Buscando <a href="${u}" target="_blank">${esc(q)}</a>. Si no se abre solo, toca el enlace.`)}
+  if(has("adiós","adios","hasta luego"))return say("Me voy a dormir un rato. Avísame, colega.");
+  const r=await ai(has("chiste")?"Cuéntame un chiste corto y bueno.":o);
+  say(r);
+}
+function handle(text){
+  let t=text.toLowerCase().trim();if(!t)return;
+  if(t.indexOf("jarvis")===0)t=t.slice(6).replace(/^[\s,.:]+/,"");
+  cap.textContent="“"+text+"”";
+  if(!t)return say("Dime, ¿qué necesitas?");
+  setState("think");run(t);
+}
+document.getElementById("cfg").onclick=()=>{
+  const a=prompt("Clave de Claude (console.anthropic.com):",cfg("jv_ak"));if(a!==null)setCfg("jv_ak",a.trim());
+  const e=prompt("Clave de ElevenLabs (opcional):",cfg("jv_ek"));if(e!==null)setCfg("jv_ek",e.trim());
+  const v=prompt("ID de voz de ElevenLabs (opcional):",cfg("jv_ev"));if(v!==null)setCfg("jv_ev",v.trim());
+  cap.textContent="Ajustes guardados solo en este navegador.";
+};
+document.getElementById("eyeb").onclick=()=>{eye=!eye};
+cv.onclick=()=>{if(state==="listen"){try{rec.stop()}catch(e){}}else listenOnce()};
+const send=()=>{const v=inp.value;inp.value="";if(v.trim())handle(v)};
+document.getElementById("send").onclick=send;
+inp.addEventListener("keydown",e=>{if(e.key==="Enter")send()});
+setState("idle");
+cap.textContent="Hola, soy Jarvis. Toca la esfera o escríbeme.";
+</script>
+</body>
+</html>
